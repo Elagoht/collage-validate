@@ -1,0 +1,68 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Elagoht/collage-snippets-highlighter/main/schemas/collage-plugin-manifest.schema.json",
+  "name": "elagoht/validate",
+  "description": "A collage plugin for validating a form an action receives.",
+  "repository": "https://github.com/Elagoht/collage-validate",
+  "templateFunctions": [
+    {
+      "name": "fieldError",
+      "signature": "fieldError \"field\"",
+      "insert": "fieldError \"${1:field}\"",
+      "doc": "The message for a field a refused submission failed, or empty."
+    },
+    {
+      "name": "fieldValue",
+      "signature": "fieldValue \"field\" [fallback]",
+      "insert": "fieldValue \"${1:field}\"",
+      "doc": "What was submitted for a field, to fill the input again after a refusal; `fallback` on the first render. Passwords are never echoed."
+    },
+    {
+      "name": "hasErrors",
+      "signature": "hasErrors",
+      "insert": "hasErrors",
+      "doc": "Whether the submission being shown again was refused."
+    }
+  ],
+  "snippets": {
+    "collage-validate field": {
+      "language": "html",
+      "prefix": "cfield",
+      "body": [
+        "<label for=\"${1:email}\">${2:Email}</label>",
+        "<input id=\"$1\" name=\"$1\" type=\"${3:email}\" value=\"{{fieldValue \"$1\"}}\"{{with fieldError \"$1\"}} aria-invalid=\"true\" aria-describedby=\"$1-error\"{{end}}>",
+        "{{with fieldError \"$1\"}}<p id=\"$1-error\" class=\"field-error\">{{.}}</p>{{end}}"
+      ],
+      "description": "collage-validate: an input that shows its error and keeps what was typed"
+    }
+  },
+  "config": {
+    "type": "object",
+    "description": "A collage plugin for validating a form an action receives.",
+    "properties": {
+      "localeMessages": {
+        "type": "object",
+        "description": "LocaleMessages replaces messages for one locale, the render's: {\"tr\": {\"required\": \"Bu alan zorunludur.\"}}. It is looked at before Messages.",
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "messages": {
+        "type": "object",
+        "description": "Messages replaces the English message of a rule, for every locale: {\"required\": \"Please fill this in.\"}. A message may name the check's value in braces — {min}, {max}, {options}, {other} — which is replaced rather than formatted with fmt, so a translation that leaves the value out, or puts it elsewhere, is still correct. A key that is not a rule stops the application from starting.",
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
+      "noRefill": {
+        "type": "array",
+        "description": "NoRefill names the fields whose submitted value is never put back in the form, matched case-insensitively as parts of the field's name. Unset, it is [\"password\"]: a password typed back into the page would sit in its HTML, in the browser's history and in any proxy that keeps it. Set, it replaces that default, so a list of your own should say \"password\" too.",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
