@@ -347,3 +347,62 @@ func TestOutsideARequest(t *testing.T) {
 		t.Errorf("status %d", res.Status)
 	}
 }
+
+// untouched is a request body that records whether anything read it.
+type untouched struct {
+	strings.Reader
+	read bool
+}
+
+func (b *untouched) Read(p []byte) (int, error) {
+	b.read = true
+	return b.Reader.Read(p)
+}
+
+// Form reads nothing until a check or a value needs the form. An action that
+// refuses a body before parsing it — a photo over its size, told by
+// Content-Length — builds a validator for Fail and Refuse without the body being
+// read, and a multipart one without its files spilling to disk.
+func TestFormParsesOnlyWhenAFieldIsRead(t *testing.T) {
+	a, err := collage.New(config(validate.Options{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	upload := collage.NewAction("upload").WithPath("en", "/upload").WithMethods(http.MethodPost).
+		WithoutCSRF().WithMaxBodyBytes(-1).
+		WithHandler(func(_ context.Context, rc *collage.RenderContext) (*collage.ActionResult, error) {
+			v := validate.Form(rc)
+			if rc.Request.ContentLength > 16 {
+				v.Fail("photo", "The photo is too large.")
+				res := validate.Refuse(rc, v, nil)
+				res.Page, res.Body, res.ContentType = nil, []byte(v.Errors()["photo"]), "text/plain"
+				return res, nil
+			}
+			v.Field("title").Required()
+			return collage.JSONOf(http.StatusOK, v.Errors())
+		}).Build()
+	if err := a.RegisterAction(upload); err != nil {
+		t.Fatal(err)
+	}
+	h := a.Handler()
+
+	sent := "title=" + strings.Repeat("x", 64)
+	body := &untouched{Reader: *strings.NewReader(sent)}
+	r := httptest.NewRequest(http.MethodPost, "/upload", body)
+	r.ContentLength = int64(len(sent)) // what a client declares; httptest cannot know it for this reader
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, r)
+	if rec.Code != http.StatusUnprocessableEntity || rec.Body.String() != "The photo is too large." {
+		t.Fatalf("refused early: %d %q", rec.Code, rec.Body.String())
+	}
+	if body.read {
+		t.Error("the body was read by a validator no check asked of")
+	}
+
+	// A check reads the form, as before.
+	if errs := check(t, app(t, validate.Options{}, func(v *validate.Validator) { v.Field("title").Required() }),
+		"/check", url.Values{"title": {"Hello"}}); len(errs) != 0 {
+		t.Errorf("a filled-in field failed: %v", errs)
+	}
+}

@@ -62,7 +62,7 @@ The form reads what the refusal left:
 | --- | --- |
 | `{{fieldError "name"}}` | The field's message, or `""` |
 | `{{fieldValue "name"}}` | What was submitted for the field, or `""` |
-| `{{fieldValue "name" .Current}}` | The same, or `.Current` when the form is shown for the first time — the value an edit form starts with |
+| `{{fieldValue "name" .Current}}` | The same, or `.Current` when the form is shown for the first time — the value an edit form starts with. A refused submission shows what was typed, not the stored value |
 | `{{hasErrors}}` | Whether any field failed |
 
 On a page nobody submitted they are empty, so one template serves the first
@@ -156,6 +156,9 @@ validate.New(validate.Options{
 
 ## Limitations
 
+- Field names are one space per render. A page with two forms sharing a field
+  name — an add box and an edit box, both `body` — shows a refused field's message
+  and value under both; give each form's fields names of their own.
 - A field is one value. `Value`, the checks and `fieldValue` read the first one,
   so a group of checkboxes sharing a name is not validated or re-checked as a set;
   read `rc.Request.Form[name]` for that.
@@ -165,3 +168,14 @@ validate.New(validate.Options{
 - An uploaded file is not checked: the checks are about text fields.
 - Validation in the browser — `required`, `type="email"` — is still worth adding
   for the reader's sake; this is the check that cannot be skipped.
+
+## Changes
+
+### v0.1.2
+
+- `Form` reads the form when a check or `Value` first needs it, not when the
+  validator is built. An action refusing a body before reading it — a photo whose
+  `Content-Length` is over its size — can build a validator for `Fail` and
+  `Refuse`, and the body is never read: a multipart one no longer spills its files
+  to disk first. Nothing is typed back for such a refusal.
+- Built against collage v0.34.2.

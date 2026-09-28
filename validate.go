@@ -24,8 +24,18 @@
 //	<input name="email" value="{{fieldValue "email"}}">
 //	{{with fieldError "email"}}<p class="error">{{.}}</p>{{end}}
 //
+// A form that starts from a record — a profile, an edit — names the stored value
+// as a fallback: what was submitted when a submission was refused, the record
+// when the form is shown for the first time.
+//
+//	<input name="fullname" value="{{fieldValue "fullname" .User.FullName}}">
+//
 // A password is never typed back into the form: a field whose name contains
 // "password" is not re-filled.
+//
+// Field names are one space per render. A page with two forms sharing a field
+// name — an add box and an edit box, both "body" — shows a refused field's
+// message and value in both; give the fields names of their own.
 package validate
 
 import (
@@ -124,7 +134,7 @@ var (
 func New(opts Options) *Plugin { return &Plugin{opts: opts} }
 
 func (p *Plugin) Name() string                   { return Name }
-func (p *Plugin) Version() string                { return "0.1.1" }
+func (p *Plugin) Version() string                { return "0.1.2" }
 func (p *Plugin) Shutdown(context.Context) error { return nil }
 
 // Configure reads the configuration, refuses a message for a rule that does not
@@ -219,37 +229,57 @@ func refused(rc *collage.RenderContext, key string) map[string]string {
 // Validator checks one submitted form. Each field keeps the first message a check
 // reported for it: a reader fixing "required" does not need "too short" as well.
 type Validator struct {
-	form   url.Values
-	plugin *Plugin
-	locale string
-	errors map[string]string
+	// request is the request whose form is read, and form what it held once
+	// read; nil until a check or a value asks for it.
+	request *http.Request
+	form    url.Values
+	plugin  *Plugin
+	locale  string
+	errors  map[string]string
 }
 
-// Form parses rc's request form — URL-encoded or multipart, the query included —
-// and returns a validator over it.
+// Form returns a validator over rc's request form — URL-encoded or multipart, the
+// query included.
+//
+// The form is read when a check or Value first needs it, not here. An action that
+// refuses a body before reading it — a photo whose Content-Length is over its
+// size — builds its validator for Fail and Refuse, and the body is never read: a
+// multipart one never spills its files to disk. Such a refusal has nothing to
+// type back, so {{fieldValue}} shows its fallback, or "".
 //
 // A body that cannot be parsed leaves the fields empty, which the checks then
-// refuse; a body too large for the action never reaches here, because collage
-// answers it with 413.
+// refuse; a body too large for the action is answered by collage with 413.
 func Form(rc *collage.RenderContext) *Validator {
-	v := &Validator{form: url.Values{}, errors: map[string]string{}}
+	v := &Validator{errors: map[string]string{}}
 	if rc == nil || rc.Request == nil {
+		v.form = url.Values{}
 		return v
 	}
-	r := rc.Request
-	if err := r.ParseMultipartForm(maxMemory); errors.Is(err, http.ErrNotMultipart) {
-		_ = r.ParseForm()
-	}
-	if r.Form != nil {
-		v.form = r.Form
-	}
+	v.request = rc.Request
 	v.locale = rc.Locale
 	v.plugin, _ = rc.Context().Value(pluginKey{}).(*Plugin)
 	return v
 }
 
+// values returns the submitted form, reading it the first time it is asked for.
+func (v *Validator) values() url.Values {
+	if v.form != nil {
+		return v.form
+	}
+	v.form = url.Values{}
+	if r := v.request; r != nil {
+		if err := r.ParseMultipartForm(maxMemory); errors.Is(err, http.ErrNotMultipart) {
+			_ = r.ParseForm()
+		}
+		if r.Form != nil {
+			v.form = r.Form
+		}
+	}
+	return v.form
+}
+
 // Value is what was submitted for field: its first value, or "" when there was none.
-func (v *Validator) Value(field string) string { return v.form.Get(field) }
+func (v *Validator) Value(field string) string { return v.values().Get(field) }
 
 // Valid reports whether every check passed.
 func (v *Validator) Valid() bool { return len(v.errors) == 0 }
@@ -307,6 +337,8 @@ func (v *Validator) refill() map[string]string {
 	if v.plugin != nil {
 		noRefill = v.plugin.noRefill
 	}
+	// A form nothing read is not read now: what refused it was decided without
+	// it, and reading it here would undo that.
 	values := make(map[string]string, len(v.form))
 	for field := range v.form {
 		lower := strings.ToLower(field)
