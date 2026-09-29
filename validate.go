@@ -134,7 +134,7 @@ var (
 func New(opts Options) *Plugin { return &Plugin{opts: opts} }
 
 func (p *Plugin) Name() string                   { return Name }
-func (p *Plugin) Version() string                { return "0.1.2" }
+func (p *Plugin) Version() string                { return "0.1.3" }
 func (p *Plugin) Shutdown(context.Context) error { return nil }
 
 // Configure reads the configuration, refuses a message for a rule that does not
@@ -174,8 +174,9 @@ func (p *Plugin) Configure(_ context.Context, host collage.ConfigHost) error {
 				if values := refused(rc, valuesKey); values != nil {
 					return values[field]
 				}
-				// Not refused: the page is showing the form for the first time, and
-				// the fallback is what an edit form starts with.
+				// Nothing submitted to type back — the form shown for the first
+				// time, or refused before its body was read: the fallback is what
+				// an edit form starts with.
 				if len(fallback) > 0 {
 					return fallback[0]
 				}
@@ -245,7 +246,9 @@ type Validator struct {
 // refuses a body before reading it — a photo whose Content-Length is over its
 // size — builds its validator for Fail and Refuse, and the body is never read: a
 // multipart one never spills its files to disk. Such a refusal has nothing to
-// type back, so {{fieldValue}} shows its fallback, or "".
+// type back, so {{fieldValue}} shows its fallback, or "", as on the first render.
+// A refusal that read the form types back what was sent for every field, an
+// empty or blank value included, and "" for a field that was not sent.
 //
 // A body that cannot be parsed leaves the fields empty, which the checks then
 // refuse; a body too large for the action is answered by collage with 413.
@@ -337,8 +340,6 @@ func (v *Validator) refill() map[string]string {
 	if v.plugin != nil {
 		noRefill = v.plugin.noRefill
 	}
-	// A form nothing read is not read now: what refused it was decided without
-	// it, and reading it here would undo that.
 	values := make(map[string]string, len(v.form))
 	for field := range v.form {
 		lower := strings.ToLower(field)
@@ -514,7 +515,11 @@ func (f *Field) Custom(check func(value string) string) *Field {
 func Refuse(rc *collage.RenderContext, v *Validator, page *collage.Page) *collage.ActionResult {
 	if rc != nil && v != nil {
 		rc.Set(errorsKey, v.Errors())
-		rc.Set(valuesKey, v.refill())
+		// A form nothing read has nothing to type back: leaving the values unset
+		// lets {{fieldValue}} show its fallback, as on the first render.
+		if v.form != nil {
+			rc.Set(valuesKey, v.refill())
+		}
 	}
 	result := collage.RenderPage(page)
 	result.Status = http.StatusUnprocessableEntity

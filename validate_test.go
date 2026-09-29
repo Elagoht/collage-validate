@@ -406,3 +406,60 @@ func TestFormParsesOnlyWhenAFieldIsRead(t *testing.T) {
 		t.Errorf("a filled-in field failed: %v", errs)
 	}
 }
+
+// A refusal made before the body was read has nothing to type back, so each field
+// shows its fallback, as on the first render. A refusal that read the body types
+// back what was sent, even an empty or blank value.
+func TestUnreadRefusalShowsFallbacks(t *testing.T) {
+	a, err := collage.New(config(validate.Options{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var profile *collage.Page
+	profile = collage.NewPage("profile").
+		WithContent(collage.NewFragment("form", "form.html").Build()).
+		WithPath("en", "/profile").
+		WithAction(http.MethodPost, func(_ context.Context, rc *collage.RenderContext) (*collage.ActionResult, error) {
+			v := validate.Form(rc)
+			if rc.Request.ContentLength > 300 {
+				v.Fail("email", "The photo is too large.")
+				return validate.Refuse(rc, v, profile), nil
+			}
+			v.Field("name").Required()
+			return validate.Refuse(rc, v, profile), nil
+		}).Build()
+	if err := a.RegisterPage(profile); err != nil {
+		t.Fatal(err)
+	}
+	h := a.Handler()
+	post := func(sent string) string {
+		t.Helper()
+		page := httptest.NewRecorder()
+		h.ServeHTTP(page, httptest.NewRequest(http.MethodGet, "/profile", nil))
+		m := tokenRe.FindStringSubmatch(page.Body.String())
+		if m == nil {
+			t.Fatalf("no token in the form:\n%s", page.Body.String())
+		}
+		sent += "&_csrf=" + url.QueryEscape(m[1])
+		r := httptest.NewRequest(http.MethodPost, "/profile", strings.NewReader(sent))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		for _, c := range page.Result().Cookies() {
+			r.AddCookie(c)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, r)
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("status %d, want 422", rec.Code)
+		}
+		return rec.Body.String()
+	}
+
+	body := post("name=" + strings.Repeat("x", 400))
+	if !strings.Contains(body, `<input name="name" value="Ada">`) || !strings.Contains(body, "The photo is too large.") {
+		t.Errorf("an unread refusal does not show the fallback:\n%s", body)
+	}
+	body = post("name=+++")
+	if !strings.Contains(body, `<input name="name" value="   ">`) {
+		t.Errorf("a blank value was not typed back as sent:\n%s", body)
+	}
+}

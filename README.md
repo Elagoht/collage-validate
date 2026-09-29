@@ -62,7 +62,7 @@ The form reads what the refusal left:
 | --- | --- |
 | `{{fieldError "name"}}` | The field's message, or `""` |
 | `{{fieldValue "name"}}` | What was submitted for the field, or `""` |
-| `{{fieldValue "name" .Current}}` | The same, or `.Current` when the form is shown for the first time — the value an edit form starts with. A refused submission shows what was typed, not the stored value |
+| `{{fieldValue "name" .Current}}` | The same, or `.Current` when there is nothing submitted to type back — the form shown for the first time, or refused before its body was read. A refused submission shows what was typed, not the stored value — an empty or blank value too |
 | `{{hasErrors}}` | Whether any field failed |
 
 On a page nobody submitted they are empty, so one template serves the first
@@ -166,10 +166,25 @@ validate.New(validate.Options{
   can, sets the same errors and answers with a fragment by building the result
   itself: `res := validate.Refuse(rc, v, nil); res.Page, res.Fragment = nil, f`.
 - An uploaded file is not checked: the checks are about text fields.
+- A size check of your own — a photo over 5 MB refused with `v.Fail` — is only
+  reached when the action's body limit is above it. collage answers a body over
+  the limit, 4 MiB unless `Server.MaxBodyBytes` says otherwise, with its own 413
+  before the action runs, so a 5 MB rule under the default limit is never seen
+  and a 4.5 MB photo is refused as too large for the server. Give the action
+  room for the file and the rest of the form:
+  `WithMaxBodyBytes(maxPhoto + 64<<10)`. Anything past that gets collage's 413.
 - Validation in the browser — `required`, `type="email"` — is still worth adding
   for the reader's sake; this is the check that cannot be skipped.
 
 ## Changes
+
+### v0.1.3
+
+- A refusal made before the body was read — the guard `Form`'s lazy reading is
+  for — shows each field's `{{fieldValue}}` fallback, as v0.1.2 documented,
+  instead of `""`. A refusal that read the form still types back what was sent,
+  an empty or blank value included.
+- The limitations name the body limit a form's own size check has to fit under.
 
 ### v0.1.2
 
