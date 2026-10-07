@@ -11,7 +11,7 @@ app, err := collage.New(&collage.Config{
 })
 ```
 
-Requires collage v0.23.0 or later. Register it in `Config.Plugins`: it adds
+Requires collage v0.50.0 or later. Register it in `Config.Plugins`: it adds
 template functions, which only a plugin registered there can.
 
 ## Refuse or accept
@@ -177,6 +177,12 @@ validate.New(validate.Options{
   for the reader's sake; this is the check that cannot be skipped.
 
 ## Changes
+
+### v0.1.5
+
+- v0.1.4 was tagged at v0.1.3's commit by mistake and is retracted.
+- Requires collage v0.50.0. A refused submission is kept under typed keys
+  (`collage.NewKey`), and the configuration is read with `collage.PluginConfig`.
 
 ### v0.1.3
 

@@ -106,10 +106,11 @@ type Options struct {
 	NoRefill []string `json:"noRefill"`
 }
 
-// Keys the refused submission is kept under in the render's shared data.
-const (
-	errorsKey = "validate:errors"
-	valuesKey = "validate:values"
+// Keys the refused submission is kept under in the render's values: each
+// field's message, and what was submitted to type back.
+var (
+	errorsKey = collage.NewKey[map[string]string]("validate:errors")
+	valuesKey = collage.NewKey[map[string]string]("validate:values")
 )
 
 // maxMemory is how much of a multipart form is held in memory rather than on disk,
@@ -134,13 +135,14 @@ var (
 func New(opts Options) *Plugin { return &Plugin{opts: opts} }
 
 func (p *Plugin) Name() string                   { return Name }
-func (p *Plugin) Version() string                { return "0.1.3" }
+func (p *Plugin) Version() string                { return "0.1.5" }
 func (p *Plugin) Shutdown(context.Context) error { return nil }
 
 // Configure reads the configuration, refuses a message for a rule that does not
 // exist, and adds {{fieldError}}, {{fieldValue}} and {{hasErrors}}.
 func (p *Plugin) Configure(_ context.Context, host collage.ConfigHost) error {
-	if err := host.Config(&p.opts); err != nil {
+	var err error
+	if p.opts, err = collage.PluginConfig(host, p.opts); err != nil {
 		return err
 	}
 	// A misspelt rule would leave the English message in place and the operator
@@ -219,11 +221,11 @@ func knownRules(messages map[string]string) error {
 	return nil
 }
 
-func refused(rc *collage.RenderContext, key string) map[string]string {
+func refused(rc *collage.RenderContext, key collage.Key[map[string]string]) map[string]string {
 	if rc == nil {
 		return nil
 	}
-	m, _ := collage.Get[map[string]string](rc, key)
+	m, _ := key.Get(rc)
 	return m
 }
 
@@ -514,11 +516,11 @@ func (f *Field) Custom(check func(value string) string) *Field {
 //	return validate.Refuse(rc, v, signupPage), nil
 func Refuse(rc *collage.RenderContext, v *Validator, page *collage.Page) *collage.ActionResult {
 	if rc != nil && v != nil {
-		rc.Set(errorsKey, v.Errors())
+		errorsKey.Set(rc, v.Errors())
 		// A form nothing read has nothing to type back: leaving the values unset
 		// lets {{fieldValue}} show its fallback, as on the first render.
 		if v.form != nil {
-			rc.Set(valuesKey, v.refill())
+			valuesKey.Set(rc, v.refill())
 		}
 	}
 	result := collage.RenderPage(page)
