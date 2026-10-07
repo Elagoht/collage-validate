@@ -178,6 +178,10 @@ validate.New(validate.Options{
 
 ## Changes
 
+### v0.1.6
+
+- The editor snippets `cfield` and `cfieldt` use generic placeholders (field, Label, text). Nothing else changes.
+
 ### v0.1.5
 
 - v0.1.4 was tagged at v0.1.3's commit by mistake and is retracted.

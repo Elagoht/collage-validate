@@ -28,8 +28,8 @@
       "language": "html",
       "prefix": "cfield",
       "body": [
-        "<label for=\"${1:email}\">${2:Email}</label>",
-        "<input id=\"$1\" name=\"$1\" type=\"${3:email}\" value=\"{{fieldValue \"$1\"}}\"{{with fieldError \"$1\"}} aria-invalid=\"true\" aria-describedby=\"$1-error\"{{end}}>",
+        "<label for=\"${1:field}\">${2:Label}</label>",
+        "<input id=\"$1\" name=\"$1\" type=\"${3:text}\" value=\"{{fieldValue \"$1\"}}\"{{with fieldError \"$1\"}} aria-invalid=\"true\" aria-describedby=\"$1-error\"{{end}}>",
         "{{with fieldError \"$1\"}}<p id=\"$1-error\" class=\"field-error\">{{.}}</p>{{end}}"
       ],
       "description": "collage-validate: an input that shows its error and keeps what was typed"
@@ -46,7 +46,7 @@
       "language": "html",
       "prefix": "cfieldt",
       "body": [
-        "<label for=\"${1:body}\">${2:Text}</label>",
+        "<label for=\"${1:field}\">${2:Label}</label>",
         "<textarea id=\"$1\" name=\"$1\"${3: maxlength=\"140\"}{{with fieldError \"$1\"}} aria-invalid=\"true\" aria-describedby=\"$1-error\"{{end}}>{{fieldValue \"$1\"}}</textarea>",
         "{{with fieldError \"$1\"}}<p id=\"$1-error\" class=\"field-error\">{{.}}</p>{{end}}"
       ],
