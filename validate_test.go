@@ -15,6 +15,7 @@ import (
 
 	validate "github.com/Elagoht/collage-validate"
 	"github.com/Elagoht/collage/pkg/collage"
+	"github.com/Elagoht/collage/pkg/collagetest"
 )
 
 const form = `<form method="post">{{csrfToken}}` +
@@ -27,25 +28,19 @@ const form = `<form method="post">{{csrfToken}}` +
 // runs checks and answers with their messages as JSON.
 func app(t *testing.T, opts validate.Options, checks func(v *validate.Validator)) http.Handler {
 	t.Helper()
-	a, err := collage.New(config(opts))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return register(t, a, checks)
+	return newSite(t, siteOptions(opts, checks)...).App.Handler()
 }
 
-func config(opts validate.Options) *collage.Config {
-	return &collage.Config{
-		Server:   collage.ServerConfig{Host: "localhost", Port: 3000},
-		Security: collage.SecurityConfig{CSRFKey: bytes.Repeat([]byte("k"), 32)},
-		Template: collage.TemplateConfig{FS: fstest.MapFS{"t/form.html": {Data: []byte(form)}}, Root: "t"},
-		Locale:   collage.LocaleConfig{Default: "en", Supported: []string{"en", "tr"}},
-		Plugins:  []collage.Plugin{validate.New(opts)},
-	}
-}
-
-func register(t *testing.T, a *collage.App, checks func(v *validate.Validator)) http.Handler {
+// newSite starts a site with the given options; it is collagetest.NewSite, named
+// for the tests that add pages of their own to siteOptions.
+func newSite(t *testing.T, options ...collagetest.SiteOption) *collagetest.Site {
 	t.Helper()
+	return collagetest.NewSite(t, options...)
+}
+
+// siteOptions is the sign-up page, the /check action, the forgery key, en and tr,
+// and the plugin with opts; extra registers more pages and actions.
+func siteOptions(opts validate.Options, checks func(v *validate.Validator), extra ...collage.Registrable) []collagetest.SiteOption {
 	var signup *collage.Page
 	signup = collage.NewPage("signup").
 		WithContent(collage.NewFragment("form", "form.html").Build()).
@@ -59,9 +54,6 @@ func register(t *testing.T, a *collage.App, checks func(v *validate.Validator)) 
 			}
 			return collage.SeeOther("/welcome"), nil
 		}).Build()
-	if err := a.RegisterPage(signup); err != nil {
-		t.Fatal(err)
-	}
 	check := collage.NewAction("check").WithPath("en", "/check").WithPath("tr", "/check").
 		WithMethods(http.MethodPost).WithoutCSRF().
 		WithHandler(func(_ context.Context, rc *collage.RenderContext) (*collage.ActionResult, error) {
@@ -71,10 +63,15 @@ func register(t *testing.T, a *collage.App, checks func(v *validate.Validator)) 
 			}
 			return collage.JSON(http.StatusOK, v.Errors())
 		}).Build()
-	if err := a.RegisterAction(check); err != nil {
-		t.Fatal(err)
+	return []collagetest.SiteOption{
+		collagetest.WithPlugins(validate.New(opts)),
+		collagetest.WithTemplates(map[string]string{"form.html": form}),
+		collagetest.WithConfig(func(c *collage.Config) {
+			c.Security.CSRFKey = bytes.Repeat([]byte("k"), 32)
+			c.Locale = collage.LocaleConfig{Default: "en", Supported: []string{"en", "tr"}}
+		}),
+		collagetest.WithRegister(append([]collage.Registrable{signup, check}, extra...)...),
 	}
-	return a.Handler()
 }
 
 var tokenRe = regexp.MustCompile(`name="_csrf" value="([^"]+)"`)
@@ -266,14 +263,13 @@ func TestMisconfigurationRefused(t *testing.T) {
 		{LocaleMessages: map[string]map[string]string{"tr": {"emial": "x"}}},
 		{NoRefill: []string{" "}},
 	} {
-		if _, err := collage.New(config(opts)); err == nil || !strings.Contains(err.Error(), "validate:") {
+		if _, err := collagetest.TrySite(t, siteOptions(opts, nil)...); err == nil || !strings.Contains(err.Error(), "validate:") {
 			t.Errorf("%+v: New = %v", opts, err)
 		}
 	}
 	// So does a misspelt rule in the application's configuration.
-	cfg := config(validate.Options{})
-	cfg.PluginConfig = map[string]json.RawMessage{validate.Name: []byte(`{"messages": {"minlen": "x"}}`)}
-	if _, err := collage.New(cfg); err == nil {
+	options := append(siteOptions(validate.Options{}, nil), collagetest.WithPluginConfig(validate.Name, `{"messages": {"minlen": "x"}}`))
+	if _, err := collagetest.TrySite(t, options...); err == nil {
 		t.Error("a misspelt rule in the configuration was accepted")
 	}
 }
@@ -281,10 +277,10 @@ func TestMisconfigurationRefused(t *testing.T) {
 // Registered too late for its template functions, the plugin stops the
 // application from starting.
 func TestRegisteredLate(t *testing.T) {
-	cfg := config(validate.Options{})
-	cfg.Plugins = nil
-	cfg.Template.FS = fstest.MapFS{"t/form.html": {Data: []byte(`<form></form>`)}}
-	a, err := collage.New(cfg)
+	a, err := collage.New(&collage.Config{
+		Server:   collage.ServerConfig{Host: "localhost", Port: 3000},
+		Template: collage.TemplateConfig{FS: fstest.MapFS{"t/form.html": {Data: []byte(`<form></form>`)}}, Root: "t"},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,24 +291,25 @@ func TestRegisteredLate(t *testing.T) {
 
 // Configuration overlays the options it is given.
 func TestConfiguration(t *testing.T) {
-	cfg := config(validate.Options{Messages: map[string]string{"required": "from Go"}})
-	cfg.PluginConfig = map[string]json.RawMessage{validate.Name: []byte(`{"messages": {"required": "from JSON"}}`)}
-	a, err := collage.New(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	h := register(t, a, func(v *validate.Validator) { v.Field("x").Required() })
+	options := append(siteOptions(validate.Options{Messages: map[string]string{"required": "from Go"}},
+		func(v *validate.Validator) { v.Field("x").Required() }),
+		collagetest.WithPluginConfig(validate.Name, `{"messages": {"required": "from JSON"}}`))
+	h := newSite(t, options...).App.Handler()
 	if got := check(t, h, "/check", url.Values{}); got["x"] != "from JSON" {
 		t.Errorf("configured message: %q", got["x"])
 	}
 }
 
-// NoRefill replaces the default list.
+// NoRefill adds to "password", never replaces it: a list of the operator's own
+// does not start typing passwords back into the page.
 func TestNoRefill(t *testing.T) {
 	h := app(t, validate.Options{NoRefill: []string{"EMAIL"}}, nil)
 	body := submit(t, h, url.Values{"email": {"ada@example.com"}, "password": {"short"}}).Body.String()
-	if !strings.Contains(body, `<input name="email" value="">`) || !strings.Contains(body, `<input name="password" value="short">`) {
+	if !strings.Contains(body, `<input name="email" value="">`) {
 		t.Errorf("NoRefill not applied:\n%s", body)
+	}
+	if strings.Contains(body, "short") {
+		t.Errorf("a NoRefill list of its own typed the password back:\n%s", body)
 	}
 }
 
@@ -364,10 +361,6 @@ func (b *untouched) Read(p []byte) (int, error) {
 // Content-Length — builds a validator for Fail and Refuse without the body being
 // read, and a multipart one without its files spilling to disk.
 func TestFormParsesOnlyWhenAFieldIsRead(t *testing.T) {
-	a, err := collage.New(config(validate.Options{}))
-	if err != nil {
-		t.Fatal(err)
-	}
 	upload := collage.NewAction("upload").WithPath("en", "/upload").WithMethods(http.MethodPost).
 		WithoutCSRF().WithMaxBodyBytes(-1).
 		WithHandler(func(_ context.Context, rc *collage.RenderContext) (*collage.ActionResult, error) {
@@ -381,10 +374,7 @@ func TestFormParsesOnlyWhenAFieldIsRead(t *testing.T) {
 			v.Field("title").Required()
 			return collage.JSON(http.StatusOK, v.Errors())
 		}).Build()
-	if err := a.RegisterAction(upload); err != nil {
-		t.Fatal(err)
-	}
-	h := a.Handler()
+	h := newSite(t, siteOptions(validate.Options{}, nil, upload)...).App.Handler()
 
 	sent := "title=" + strings.Repeat("x", 64)
 	body := &untouched{Reader: *strings.NewReader(sent)}
@@ -411,10 +401,6 @@ func TestFormParsesOnlyWhenAFieldIsRead(t *testing.T) {
 // shows its fallback, as on the first render. A refusal that read the body types
 // back what was sent, even an empty or blank value.
 func TestUnreadRefusalShowsFallbacks(t *testing.T) {
-	a, err := collage.New(config(validate.Options{}))
-	if err != nil {
-		t.Fatal(err)
-	}
 	var profile *collage.Page
 	profile = collage.NewPage("profile").
 		WithContent(collage.NewFragment("form", "form.html").Build()).
@@ -428,10 +414,7 @@ func TestUnreadRefusalShowsFallbacks(t *testing.T) {
 			v.Field("name").Required()
 			return validate.Refuse(rc, v, profile), nil
 		}).Build()
-	if err := a.RegisterPage(profile); err != nil {
-		t.Fatal(err)
-	}
-	h := a.Handler()
+	h := newSite(t, siteOptions(validate.Options{}, nil, profile)...).App.Handler()
 	post := func(sent string) string {
 		t.Helper()
 		page := httptest.NewRecorder()
@@ -461,5 +444,53 @@ func TestUnreadRefusalShowsFallbacks(t *testing.T) {
 	body = post("name=+++")
 	if !strings.Contains(body, `<input name="name" value="   ">`) {
 		t.Errorf("a blank value was not typed back as sent:\n%s", body)
+	}
+}
+
+// Values validates fields already read — the non-file fields uploads.Receive
+// hands back after streaming the body — and a refusal through it types them
+// back, the password excepted, with the render's locale's messages.
+func TestValues(t *testing.T) {
+	var page *collage.Page
+	page = collage.NewPage("received").
+		WithContent(collage.NewFragment("form", "form.html").Build()).
+		WithPath("en", "/received").WithPath("tr", "/alindi").
+		WithAction(http.MethodPost, func(_ context.Context, rc *collage.RenderContext) (*collage.ActionResult, error) {
+			// The body is not read here: these are the values a streaming reader
+			// collected.
+			received := url.Values{"email": {"nope"}, "password": {"hunter2"}}
+			if rc.Locale == "tr" {
+				received.Set("email", "")
+			}
+			v := validate.Values(rc, received)
+			v.Field("email").Required().Email()
+			v.Field("name").Required()
+			if !v.Valid() {
+				return validate.Refuse(rc, v, page), nil
+			}
+			return collage.SeeOther("/"), nil
+		}).Build()
+	opts := validate.Options{LocaleMessages: map[string]map[string]string{"tr": {"required": "Bu alan zorunludur."}}}
+	site := newSite(t, siteOptions(opts, nil, page)...)
+
+	res := site.Submit(site.Get("/received"), "/received", url.Values{"email": {"ignored@example.com"}})
+	res.WantStatus(http.StatusUnprocessableEntity)
+	for _, want := range []string{`<input name="email" value="nope">`, `<p class="e-email">Must be a valid email address.</p>`, `<input name="name" value="">`} {
+		if !strings.Contains(res.Body, want) {
+			t.Errorf("missing %s\n%s", want, res.Body)
+		}
+	}
+	if strings.Contains(res.Body, "hunter2") {
+		t.Errorf("the password was typed back:\n%s", res.Body)
+	}
+
+	tr := site.Submit(site.Get("/tr/alindi"), "/tr/alindi", url.Values{})
+	if !strings.Contains(tr.Body, `<p class="e-email">Bu alan zorunludur.</p>`) {
+		t.Errorf("tr refusal:\n%s", tr.Body)
+	}
+	v := validate.Values(nil, nil)
+	v.Field("x").Required()
+	if v.Valid() || v.Value("x") != "" {
+		t.Errorf("Values(nil, nil): valid = %v", v.Valid())
 	}
 }

@@ -11,7 +11,7 @@ app, err := collage.New(&collage.Config{
 })
 ```
 
-Requires collage v0.60.0 or later. Register it in `Config.Plugins`: it adds
+Requires collage v0.61.0 or later. Register it in `Config.Plugins`: it adds
 template functions, which only a plugin registered there can.
 
 ## Refuse or accept
@@ -94,6 +94,28 @@ password still fails. Values are checked as they arrived; nothing is trimmed.
 way; `v.Errors()` is every message by field, `v.Valid()` whether there are none,
 and `v.Value(field)` what was submitted.
 
+## Values already read
+
+`validate.Form` reads the request's body. When something else has read it — the
+non-file fields `uploads.Receive` hands back after streaming a multipart body —
+the form is empty by then. `validate.Values` checks those values instead, and
+`Refuse` types them back the same way, passwords excepted:
+
+```go
+received, err := up.Receive(rc, spec)
+if err != nil {
+	return nil, err
+}
+v := validate.Values(rc, received.Values)
+v.Field("title").Required().MaxLen(80)
+if !v.Valid() {
+	return validate.Refuse(rc, v, uploadPage), nil
+}
+```
+
+`rc` still gives the render's locale and the application's messages; its body is
+not read again.
+
 ## Messages
 
 The defaults are English:
@@ -129,8 +151,9 @@ being built, so a misspelt rule is not an English message quietly left in place.
 
 A value typed back into the form sits in the page's HTML — in the browser's
 history, in anything that keeps the response. A field whose name contains
-`password`, in any case, is never re-filled. `NoRefill` replaces that list with
-your own, matched the same way; include `password` in it if you still have one.
+`password`, in any case, is never re-filled. `NoRefill` adds names of your own,
+matched the same way — `["pin", "card"]` — and `password` stays in the list
+whatever it says.
 
 ## Configuration
 
@@ -140,7 +163,7 @@ validate.New(validate.Options{
 	LocaleMessages: map[string]map[string]string{
 		"tr": {"required": "Bu alan zorunludur.", "minLen": "En az {min} karakter olmalı."},
 	},
-	NoRefill: []string{"password", "card"},
+	NoRefill: []string{"pin", "card"},
 })
 ```
 
@@ -149,7 +172,7 @@ validate.New(validate.Options{
   "elagoht/validate": {
     "messages": { "required": "Please fill this in." },
     "localeMessages": { "tr": { "required": "Bu alan zorunludur." } },
-    "noRefill": ["password", "card"]
+    "noRefill": ["pin", "card"]
   }
 }
 ```
@@ -177,6 +200,17 @@ validate.New(validate.Options{
   for the reader's sake; this is the check that cannot be skipped.
 
 ## Changes
+
+### Changed in v0.2.0
+
+- `noRefill` adds to `password` instead of replacing it: `"noRefill": ["pin"]`
+  used to start typing passwords back into the form; now `password` is always
+  left out and `pin` is left out too. A list that named `password` itself still
+  works.
+- New `validate.Values(rc, values)`: a validator over values already read, such
+  as the fields `uploads.Receive` returns, with `Refuse` and the template
+  functions working as for `Form`.
+- Requires collage v0.61.0.
 
 ### v0.1.7
 

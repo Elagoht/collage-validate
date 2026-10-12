@@ -31,7 +31,10 @@
 //	<input name="fullname" value="{{fieldValue "fullname" .User.FullName}}">
 //
 // A password is never typed back into the form: a field whose name contains
-// "password" is not re-filled.
+// "password" is not re-filled, and Options.NoRefill adds more.
+//
+// Values validates fields something else already read, such as the non-file
+// fields of an upload.
 //
 // Field names are one space per render. A page with two forms sharing a field
 // name — an add box and an edit box, both "body" — shows a refused field's
@@ -98,11 +101,11 @@ type Options struct {
 	// {"tr": {"required": "Bu alan zorunludur."}}. It is looked at before
 	// Messages.
 	LocaleMessages map[string]map[string]string `json:"localeMessages"`
-	// NoRefill names the fields whose submitted value is never put back in the
-	// form, matched case-insensitively as parts of the field's name. Unset, it is
-	// ["password"]: a password typed back into the page would sit in its HTML,
-	// in the browser's history and in any proxy that keeps it. Set, it replaces
-	// that default, so a list of your own should say "password" too.
+	// NoRefill names more fields whose submitted value is never put back in the
+	// form, matched case-insensitively as parts of the field's name: ["pin",
+	// "card"]. "password" is always among them, set or not: a password typed back
+	// into the page would sit in its HTML, in the browser's history and in any
+	// proxy that keeps it.
 	NoRefill []string `json:"noRefill"`
 }
 
@@ -135,7 +138,7 @@ var (
 func New(opts Options) *Plugin { return &Plugin{opts: opts} }
 
 func (p *Plugin) Name() string                   { return Name }
-func (p *Plugin) Version() string                { return "0.1.7" }
+func (p *Plugin) Version() string                { return "0.2.0" }
 func (p *Plugin) Shutdown(context.Context) error { return nil }
 
 // Configure reads the configuration, refuses a message for a rule that does not
@@ -155,15 +158,13 @@ func (p *Plugin) Configure(_ context.Context, host collage.ConfigHost) error {
 			return fmt.Errorf("validate: localeMessages %q: %w", locale, err)
 		}
 	}
+	// "password" is never left out: a list of the operator's own adds to it.
 	p.noRefill = []string{"password"}
-	if p.opts.NoRefill != nil {
-		p.noRefill = nil
-		for _, name := range p.opts.NoRefill {
-			if name = strings.ToLower(strings.TrimSpace(name)); name == "" {
-				return errors.New("validate: noRefill: an empty name would match every field")
-			}
-			p.noRefill = append(p.noRefill, name)
+	for _, name := range p.opts.NoRefill {
+		if name = strings.ToLower(strings.TrimSpace(name)); name == "" {
+			return errors.New("validate: noRefill: an empty name would match every field")
 		}
+		p.noRefill = append(p.noRefill, name)
 	}
 	p.configured = true
 
@@ -263,6 +264,32 @@ func Form(rc *collage.RenderContext) *Validator {
 	v.request = rc.Request
 	v.locale = rc.Locale
 	v.plugin, _ = rc.Context().Value(pluginKey{}).(*Plugin)
+	return v
+}
+
+// Values returns a validator over values already read, for a form whose body
+// something else consumed: the non-file fields uploads.Receive hands back after
+// streaming a multipart body, where Form would find the body gone.
+//
+//	received, err := up.Receive(rc, spec)
+//	v := validate.Values(rc, received.Values)
+//	v.Field("title").Required()
+//	if !v.Valid() {
+//		return validate.Refuse(rc, v, uploadPage), nil
+//	}
+//
+// The checks, the messages and Refuse work as they do for Form: rc gives the
+// locale and the application's messages, and a refusal types values back, a
+// password excepted. rc's request body is not read.
+func Values(rc *collage.RenderContext, values url.Values) *Validator {
+	v := &Validator{errors: map[string]string{}, form: url.Values{}}
+	if values != nil {
+		v.form = values
+	}
+	if rc != nil && rc.Request != nil {
+		v.locale = rc.Locale
+		v.plugin, _ = rc.Context().Value(pluginKey{}).(*Plugin)
+	}
 	return v
 }
 

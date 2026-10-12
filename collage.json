@@ -76,7 +76,7 @@
       },
       "noRefill": {
         "type": "array",
-        "description": "NoRefill names the fields whose submitted value is never put back in the form, matched case-insensitively as parts of the field's name. Unset, it is [\"password\"]: a password typed back into the page would sit in its HTML, in the browser's history and in any proxy that keeps it. Set, it replaces that default, so a list of your own should say \"password\" too.",
+        "description": "NoRefill names more fields whose submitted value is never put back in the form, matched case-insensitively as parts of the field's name: [\"pin\", \"card\"]. \"password\" is always among them, set or not: a password typed back into the page would sit in its HTML, in the browser's history and in any proxy that keeps it.",
         "items": {
           "type": "string"
         }
