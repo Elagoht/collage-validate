@@ -280,7 +280,9 @@ func Form(rc *collage.RenderContext) *Validator {
 //
 // The checks, the messages and Refuse work as they do for Form: rc gives the
 // locale and the application's messages, and a refusal types values back, a
-// password excepted. rc's request body is not read.
+// password excepted. rc's request body is not read. Values(rc, nil) is an empty
+// form: a refusal then types "" back into every field, its fallback ignored, as
+// for a form that was read and sent nothing.
 func Values(rc *collage.RenderContext, values url.Values) *Validator {
 	v := &Validator{errors: map[string]string{}, form: url.Values{}}
 	if values != nil {

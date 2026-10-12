@@ -28,14 +28,7 @@ const form = `<form method="post">{{csrfToken}}` +
 // runs checks and answers with their messages as JSON.
 func app(t *testing.T, opts validate.Options, checks func(v *validate.Validator)) http.Handler {
 	t.Helper()
-	return newSite(t, siteOptions(opts, checks)...).App.Handler()
-}
-
-// newSite starts a site with the given options; it is collagetest.NewSite, named
-// for the tests that add pages of their own to siteOptions.
-func newSite(t *testing.T, options ...collagetest.SiteOption) *collagetest.Site {
-	t.Helper()
-	return collagetest.NewSite(t, options...)
+	return collagetest.NewSite(t, siteOptions(opts, checks)...).App.Handler()
 }
 
 // siteOptions is the sign-up page, the /check action, the forgery key, en and tr,
@@ -294,7 +287,7 @@ func TestConfiguration(t *testing.T) {
 	options := append(siteOptions(validate.Options{Messages: map[string]string{"required": "from Go"}},
 		func(v *validate.Validator) { v.Field("x").Required() }),
 		collagetest.WithPluginConfig(validate.Name, `{"messages": {"required": "from JSON"}}`))
-	h := newSite(t, options...).App.Handler()
+	h := collagetest.NewSite(t, options...).App.Handler()
 	if got := check(t, h, "/check", url.Values{}); got["x"] != "from JSON" {
 		t.Errorf("configured message: %q", got["x"])
 	}
@@ -374,7 +367,7 @@ func TestFormParsesOnlyWhenAFieldIsRead(t *testing.T) {
 			v.Field("title").Required()
 			return collage.JSON(http.StatusOK, v.Errors())
 		}).Build()
-	h := newSite(t, siteOptions(validate.Options{}, nil, upload)...).App.Handler()
+	h := collagetest.NewSite(t, siteOptions(validate.Options{}, nil, upload)...).App.Handler()
 
 	sent := "title=" + strings.Repeat("x", 64)
 	body := &untouched{Reader: *strings.NewReader(sent)}
@@ -414,7 +407,7 @@ func TestUnreadRefusalShowsFallbacks(t *testing.T) {
 			v.Field("name").Required()
 			return validate.Refuse(rc, v, profile), nil
 		}).Build()
-	h := newSite(t, siteOptions(validate.Options{}, nil, profile)...).App.Handler()
+	h := collagetest.NewSite(t, siteOptions(validate.Options{}, nil, profile)...).App.Handler()
 	post := func(sent string) string {
 		t.Helper()
 		page := httptest.NewRecorder()
@@ -471,7 +464,7 @@ func TestValues(t *testing.T) {
 			return collage.SeeOther("/"), nil
 		}).Build()
 	opts := validate.Options{LocaleMessages: map[string]map[string]string{"tr": {"required": "Bu alan zorunludur."}}}
-	site := newSite(t, siteOptions(opts, nil, page)...)
+	site := collagetest.NewSite(t, siteOptions(opts, nil, page)...)
 
 	res := site.Submit(site.Get("/received"), "/received", url.Values{"email": {"ignored@example.com"}})
 	res.WantStatus(http.StatusUnprocessableEntity)
