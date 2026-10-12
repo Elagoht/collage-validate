@@ -69,7 +69,7 @@ func register(t *testing.T, a *collage.App, checks func(v *validate.Validator)) 
 			if checks != nil {
 				checks(v)
 			}
-			return collage.JSONOf(http.StatusOK, v.Errors())
+			return collage.JSON(http.StatusOK, v.Errors())
 		}).Build()
 	if err := a.RegisterAction(check); err != nil {
 		t.Fatal(err)
@@ -379,7 +379,7 @@ func TestFormParsesOnlyWhenAFieldIsRead(t *testing.T) {
 				return res, nil
 			}
 			v.Field("title").Required()
-			return collage.JSONOf(http.StatusOK, v.Errors())
+			return collage.JSON(http.StatusOK, v.Errors())
 		}).Build()
 	if err := a.RegisterAction(upload); err != nil {
 		t.Fatal(err)

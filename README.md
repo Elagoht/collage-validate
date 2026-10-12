@@ -11,7 +11,7 @@ app, err := collage.New(&collage.Config{
 })
 ```
 
-Requires collage v0.50.0 or later. Register it in `Config.Plugins`: it adds
+Requires collage v0.60.0 or later. Register it in `Config.Plugins`: it adds
 template functions, which only a plugin registered there can.
 
 ## Refuse or accept
@@ -177,6 +177,10 @@ validate.New(validate.Options{
   for the reader's sake; this is the check that cannot be skipped.
 
 ## Changes
+
+### v0.1.7
+
+- Requires collage v0.60.0 (sealed public API). No behaviour change.
 
 ### v0.1.6
 
