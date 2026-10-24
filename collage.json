@@ -3,7 +3,7 @@
   "name": "elagoht/validate",
   "description": "A collage plugin for validating a form an action receives.",
   "repository": "https://github.com/Elagoht/collage-validate",
-  "setup": "On the form's page, `.WithAction(\"POST\", send)`; in `send`: `v := validate.Form(rc)`, `v.Field(\"email\").Required().Email()`, and `if !v.Valid() { return validate.Refuse(rc, v, rc.Page), nil }`.\nIn the form: `value=\"{{fieldValue \"email\"}}\"` and `{{with fieldError \"email\"}}<p>{{.}}</p>{{end}}`, with `{{csrfToken}}` inside the `<form>`.",
+  "setup": "On the form's page, `.WithAction(\"POST\", send)`; in `send`: `v := validate.Form(rc)`, `v.Field(\"email\").Required().Email()`, and `if !v.Valid() { return validate.Refuse(rc, v, rc.Page), nil }`.\nTyped values: `servings := v.Field(\"servings\").Required().Int()`, then `servings.Value()` is an int; `Float`, `Bool`, `Date`, `All` and `Lines` likewise.\nIn the form: `value=\"{{fieldValue \"email\"}}\"` and `{{with fieldError \"email\"}}<p>{{.}}</p>{{end}}`, with `{{csrfToken}}` inside the `<form>`.",
   "templateFunctions": [
     {
       "name": "fieldError",

@@ -24,6 +24,13 @@
 //	<input name="email" value="{{fieldValue "email"}}">
 //	{{with fieldError "email"}}<p class="error">{{.}}</p>{{end}}
 //
+// Each field gives back what was checked, as its type:
+//
+//	servings := v.Field("servings").Required().Int().Range(1, 50)
+//	steps := v.Field("steps").Required().Lines()
+//	if !v.Valid() { ... }
+//	create(servings.Value(), steps.Value()) // an int, a []string
+//
 // A form that starts from a record — a profile, an edit — names the stored value
 // as a fallback: what was submitted when a submission was refused, the record
 // when the form is shown for the first time.
@@ -71,6 +78,15 @@ const (
 	RuleOneOf    = "oneOf"
 	RuleMatches  = "matches"
 	RuleEqual    = "equal"
+	RuleMin      = "min"
+	RuleMax      = "max"
+	RuleMinItems = "minItems"
+	RuleMaxItems = "maxItems"
+	RuleFloat    = "float"
+	RuleBool     = "bool"
+	RuleDate     = "date"
+	RuleMinDate  = "minDate"
+	RuleMaxDate  = "maxDate"
 )
 
 // defaultMessages are the English messages a check reports when nothing overrides
@@ -86,6 +102,15 @@ var defaultMessages = map[string]string{
 	RuleOneOf:    "Must be one of: {options}.",
 	RuleMatches:  "Is not in the expected format.",
 	RuleEqual:    "Does not match.",
+	RuleMin:      "Must be at least {min}.",
+	RuleMax:      "Must be at most {max}.",
+	RuleMinItems: "Must have at least {min} items.",
+	RuleMaxItems: "Must have at most {max} items.",
+	RuleFloat:    "Must be a number.",
+	RuleBool:     "Must be yes or no.",
+	RuleDate:     "Must be a date.",
+	RuleMinDate:  "Must be on or after {min}.",
+	RuleMaxDate:  "Must be on or before {max}.",
 }
 
 // Options configures the plugin.
@@ -138,7 +163,7 @@ var (
 func New(opts Options) *Plugin { return &Plugin{opts: opts} }
 
 func (p *Plugin) Name() string                   { return Name }
-func (p *Plugin) Version() string                { return "0.2.1" }
+func (p *Plugin) Version() string                { return "0.3.0" }
 func (p *Plugin) Shutdown(context.Context) error { return nil }
 
 // Configure reads the configuration, refuses a message for a rule that does not
@@ -388,6 +413,19 @@ func (v *Validator) refill() map[string]string {
 	return values
 }
 
+// Value is what was submitted for the field, white space around it trimmed:
+//
+//	title := v.Field("title").Required().MaxLen(80)
+//	if !v.Valid() { ... }
+//	recipe.Title = title.Value()
+func (f *Field) Value() string { return strings.TrimSpace(f.value) }
+
+// failed reports whether a check has failed the field.
+func (f *Field) failed() bool {
+	_, failed := f.v.errors[f.name]
+	return failed
+}
+
 // Field is one field's checks.
 type Field struct {
 	v     *Validator
@@ -412,46 +450,60 @@ func (f *Field) Message(text string) *Field {
 	return f
 }
 
-// check records rule's message when ok is false. It is skipped when the field has
-// already failed, and, unless always is set, when the field is empty. params are
-// placeholder and value pairs for the message: "{min}", "8".
-func (f *Field) check(rule string, always bool, ok func() bool, params ...string) *Field {
+// check records rule's message when ok is false, or message when one was given.
+// It is skipped when the field has already failed, and, unless always is set,
+// when the field is empty. params are placeholder and value pairs for the
+// message: "{min}", "8".
+func (f *Field) check(rule string, always bool, message []string, ok func() bool, params ...string) *Field {
+	return f.checkIf(!always && f.value == "", rule, message, ok, params...)
+}
+
+// checkIf is check with what counts as empty said by the caller: a list is
+// empty with no items, whatever its first value.
+func (f *Field) checkIf(skipEmpty bool, rule string, message []string, ok func() bool, params ...string) *Field {
 	f.last = false
 	if _, failed := f.v.errors[f.name]; failed {
 		return f
 	}
-	if !always && f.value == "" {
+	if skipEmpty {
 		return f
 	}
 	if !ok() {
 		f.v.errors[f.name] = f.v.message(rule, params)
 		f.last = true
 	}
+	if len(message) > 0 {
+		f.Message(message[0])
+	}
 	return f
 }
 
 // Required fails an empty field, and one holding only white space.
-func (f *Field) Required() *Field {
-	return f.check(RuleRequired, true, func() bool { return strings.TrimSpace(f.value) != "" })
+//
+// Every check takes an optional message, said instead of the rule's when the
+// check fails — v.Field("title").Required("Give the recipe a name.") — as
+// Message after it would.
+func (f *Field) Required(message ...string) *Field {
+	return f.check(RuleRequired, true, message, func() bool { return strings.TrimSpace(f.value) != "" })
 }
 
 // MinLen fails a value shorter than n characters. Characters, not bytes: "şişe" is
 // four.
-func (f *Field) MinLen(n int) *Field {
-	return f.check(RuleMinLen, false, func() bool { return utf8.RuneCountInString(f.value) >= n },
+func (f *Field) MinLen(n int, message ...string) *Field {
+	return f.check(RuleMinLen, false, message, func() bool { return utf8.RuneCountInString(f.value) >= n },
 		"{min}", strconv.Itoa(n))
 }
 
 // MaxLen fails a value longer than n characters.
-func (f *Field) MaxLen(n int) *Field {
-	return f.check(RuleMaxLen, false, func() bool { return utf8.RuneCountInString(f.value) <= n },
+func (f *Field) MaxLen(n int, message ...string) *Field {
+	return f.check(RuleMaxLen, false, message, func() bool { return utf8.RuneCountInString(f.value) <= n },
 		"{max}", strconv.Itoa(n))
 }
 
 // Email fails anything but a bare address: "ada@example.com", not
 // "Ada <ada@example.com>".
-func (f *Field) Email() *Field {
-	return f.check(RuleEmail, false, func() bool {
+func (f *Field) Email(message ...string) *Field {
+	return f.check(RuleEmail, false, message, func() bool {
 		addr, err := mail.ParseAddress(f.value)
 		return err == nil && addr.Name == "" && addr.Address == f.value
 	})
@@ -460,40 +512,46 @@ func (f *Field) Email() *Field {
 // URL fails anything but an absolute http or https URL with a host. Other schemes
 // are refused on purpose: a "javascript:" link typed into a profile is how a
 // page ends up running a stranger's script.
-func (f *Field) URL() *Field {
-	return f.check(RuleURL, false, func() bool {
+func (f *Field) URL(message ...string) *Field {
+	return f.check(RuleURL, false, message, func() bool {
 		u, err := url.Parse(f.value)
 		return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
 	})
 }
 
-// Int fails a value that is not a whole number.
-func (f *Field) Int() *Field {
-	return f.check(RuleInt, false, func() bool {
-		_, err := strconv.Atoi(f.value)
+// Int fails a value that is not a whole number, and turns the field into an
+// IntField, whose checks and value are numbers:
+//
+//	servings := v.Field("servings").Required().Int().Range(1, 50)
+//	if !v.Valid() { ... }
+//	servings.Value() // an int
+//
+// White space around the number is ignored.
+func (f *Field) Int(message ...string) *IntField {
+	i := &IntField{f: f}
+	f.check(RuleInt, false, message, func() bool {
+		n, err := strconv.Atoi(strings.TrimSpace(f.value))
+		i.n = n
 		return err == nil
 	})
+	return i
 }
 
 // Range fails a value that is not a whole number from min to max, both included.
 // A value that is not a number at all fails as Int does, which says what is
-// actually wrong with it.
-func (f *Field) Range(min, max int) *Field {
-	f.Int()
-	if f.last {
-		return f
-	}
-	return f.check(RuleRange, false, func() bool {
-		n, _ := strconv.Atoi(f.value)
-		return n >= min && n <= max
-	}, "{min}", strconv.Itoa(min), "{max}", strconv.Itoa(max))
+// actually wrong with it. For the number itself, use Int().Range.
+func (f *Field) Range(min, max int, message ...string) *Field {
+	return f.Int().Range(min, max, message...).f
 }
 
 // OneOf fails a value that is not one of options. A select or a set of radio
 // buttons offers a fixed list, and nothing stops a request from sending another
 // value.
+//
+// It takes no message of its own, its arguments being the options: follow it
+// with Message.
 func (f *Field) OneOf(options ...string) *Field {
-	return f.check(RuleOneOf, false, func() bool {
+	return f.check(RuleOneOf, false, nil, func() bool {
 		for _, option := range options {
 			if f.value == option {
 				return true
@@ -505,15 +563,15 @@ func (f *Field) OneOf(options ...string) *Field {
 
 // Matches fails a value re does not match. Anchor the expression — ^[a-z0-9-]+$ —
 // or a value containing a match anywhere passes.
-func (f *Field) Matches(re *regexp.Regexp) *Field {
-	return f.check(RuleMatches, false, func() bool { return re.MatchString(f.value) })
+func (f *Field) Matches(re *regexp.Regexp, message ...string) *Field {
+	return f.check(RuleMatches, false, message, func() bool { return re.MatchString(f.value) })
 }
 
 // Equal fails a value that differs from other field's: a password and its
 // confirmation. It is checked when empty too, so an empty confirmation of a
 // filled-in password fails.
-func (f *Field) Equal(other string) *Field {
-	return f.check(RuleEqual, true, func() bool { return f.value == f.v.Value(other) }, "{other}", other)
+func (f *Field) Equal(other string, message ...string) *Field {
+	return f.check(RuleEqual, true, message, func() bool { return f.value == f.v.Value(other) }, "{other}", other)
 }
 
 // Custom runs check on the value, and fails the field with the message it returns;
