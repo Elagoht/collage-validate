@@ -163,7 +163,7 @@ var (
 func New(opts Options) *Plugin { return &Plugin{opts: opts} }
 
 func (p *Plugin) Name() string                   { return Name }
-func (p *Plugin) Version() string                { return "0.3.0" }
+func (p *Plugin) Version() string                { return "0.3.1" }
 func (p *Plugin) Shutdown(context.Context) error { return nil }
 
 // Configure reads the configuration, refuses a message for a rule that does not
@@ -367,9 +367,11 @@ func (v *Validator) Fail(field, message string) {
 //	v.Field("age").Required().Range(18, 130)
 //
 // Every check but Required and Equal passes an empty value, so an optional field
-// is only checked when it was filled in.
+// is only checked when it was filled in. The checks see what Value returns: the
+// value with white space around it trimmed, so "   x" is one character long and
+// a blank value is empty.
 func (v *Validator) Field(name string) *Field {
-	return &Field{v: v, name: name, value: v.Value(name)}
+	return &Field{v: v, name: name, value: strings.TrimSpace(v.Value(name))}
 }
 
 // message is what a failed rule says: the application's message for the render's
@@ -418,7 +420,7 @@ func (v *Validator) refill() map[string]string {
 //	title := v.Field("title").Required().MaxLen(80)
 //	if !v.Valid() { ... }
 //	recipe.Title = title.Value()
-func (f *Field) Value() string { return strings.TrimSpace(f.value) }
+func (f *Field) Value() string { return f.value }
 
 // failed reports whether a check has failed the field.
 func (f *Field) failed() bool {
@@ -484,7 +486,7 @@ func (f *Field) checkIf(skipEmpty bool, rule string, message []string, ok func()
 // check fails — v.Field("title").Required("Give the recipe a name.") — as
 // Message after it would.
 func (f *Field) Required(message ...string) *Field {
-	return f.check(RuleRequired, true, message, func() bool { return strings.TrimSpace(f.value) != "" })
+	return f.check(RuleRequired, true, message, func() bool { return f.value != "" })
 }
 
 // MinLen fails a value shorter than n characters. Characters, not bytes: "şişe" is
@@ -530,7 +532,7 @@ func (f *Field) URL(message ...string) *Field {
 func (f *Field) Int(message ...string) *IntField {
 	i := &IntField{f: f}
 	f.check(RuleInt, false, message, func() bool {
-		n, err := strconv.Atoi(strings.TrimSpace(f.value))
+		n, err := strconv.Atoi(f.value)
 		i.n = n
 		return err == nil
 	})
@@ -568,13 +570,13 @@ func (f *Field) Matches(re *regexp.Regexp, message ...string) *Field {
 }
 
 // Equal fails a value that differs from other field's: a password and its
-// confirmation. It is checked when empty too, so an empty confirmation of a
+// confirmation, both trimmed. It is checked when empty too, so an empty confirmation of a
 // filled-in password fails.
 func (f *Field) Equal(other string, message ...string) *Field {
-	return f.check(RuleEqual, true, message, func() bool { return f.value == f.v.Value(other) }, "{other}", other)
+	return f.check(RuleEqual, true, message, func() bool { return f.value == strings.TrimSpace(f.v.Value(other)) }, "{other}", other)
 }
 
-// Custom runs check on the value, and fails the field with the message it returns;
+// Custom runs check on the value, trimmed as Value returns it, and fails the field with the message it returns;
 // "" passes.
 //
 //	v.Field("username").Custom(func(s string) string {

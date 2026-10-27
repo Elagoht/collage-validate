@@ -487,3 +487,31 @@ func TestValues(t *testing.T) {
 		t.Errorf("Values(nil, nil): valid = %v", v.Valid())
 	}
 }
+
+// The checks see what Value returns: white space around the value is trimmed
+// before MinLen, MaxLen, OneOf, Matches, Equal, Email and Custom look at it, so
+// "       x" is one character long and fails MinLen(8). (PLUGA-B07)
+func TestChecksSeeTheTrimmedValue(t *testing.T) {
+	v := validate.Values(nil, url.Values{"title": {"       x"}})
+	title := v.Field("title").Required().MinLen(8)
+	if v.Valid() {
+		t.Fatalf("MinLen(8) passed %q, whose Value is %q", "       x", title.Value())
+	}
+
+	v = validate.Values(nil, url.Values{
+		"code": {" abc "}, "size": {" m "}, "email": {" a@example.com "},
+		"password": {" secret "}, "confirm": {"secret"}, "name": {"  "},
+	})
+	v.Field("code").MaxLen(3).Matches(regexp.MustCompile(`^[a-z]+$`))
+	v.Field("size").OneOf("s", "m", "l")
+	v.Field("email").Email()
+	v.Field("password").Equal("confirm")
+	var seen string
+	v.Field("name").Custom(func(s string) string { seen = s; return "ran" })
+	if !v.Valid() {
+		t.Fatalf("trimmed values refused: %v", v.Errors())
+	}
+	if seen != "" {
+		t.Fatalf("Custom ran on a blank value: %q", seen)
+	}
+}

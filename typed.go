@@ -74,7 +74,7 @@ func (i *IntField) Ptr() *int {
 func (f *Field) Float(message ...string) *FloatField {
 	ff := &FloatField{f: f}
 	f.check(RuleFloat, false, message, func() bool {
-		x, err := strconv.ParseFloat(strings.TrimSpace(f.value), 64)
+		x, err := strconv.ParseFloat(f.value, 64)
 		if err != nil || math.IsInf(x, 0) || math.IsNaN(x) {
 			return false
 		}
@@ -149,7 +149,7 @@ func formatFloat(x float64) string { return strconv.FormatFloat(x, 'f', -1, 64) 
 func (f *Field) Bool(message ...string) *BoolField {
 	b := &BoolField{f: f}
 	f.check(RuleBool, false, message, func() bool {
-		switch strings.ToLower(strings.TrimSpace(f.value)) {
+		switch strings.ToLower(f.value) {
 		case "on", "true", "1", "yes":
 			b.on = true
 			return true
@@ -183,7 +183,7 @@ func (b *BoolField) Value() bool { return b.on && !b.f.failed() }
 func (f *Field) Date(message ...string) *DateField {
 	d := &DateField{f: f}
 	f.check(RuleDate, false, message, func() bool {
-		t, err := time.Parse(DateLayout, strings.TrimSpace(f.value))
+		t, err := time.Parse(DateLayout, f.value)
 		d.t = t
 		return err == nil
 	})

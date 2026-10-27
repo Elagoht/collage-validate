@@ -92,8 +92,9 @@ A field keeps the **first** message a check reported: a reader fixing "required"
 does not need "too short" as well, so later checks on a failed field do not run.
 Every check but `Required` and `Equal` passes an empty value — an optional field
 is checked only when it was filled in, and an empty confirmation of a filled-in
-password still fails. A string check sees the value as it arrived; the typed
-ones, below, read it with the white space around it trimmed.
+password still fails. Every check sees the value `Value()` returns: white
+space around it trimmed, so `"       x"` is one character long and fails
+`MinLen(8)`, and `Equal` compares both fields trimmed.
 
 Every check takes an optional message, said instead of the rule's when it fails:
 `Required("Name the recipe.")`, `Int("Whole servings only.")`, `MinLen(8,
@@ -275,6 +276,16 @@ validate.New(validate.Options{
   for the reader's sake; this is the check that cannot be skipped.
 
 ## Changes
+
+### Changed in v0.3.1
+
+- The checks see the value with white space around it trimmed — the value
+  `Value()` returns. Before, `MinLen`, `MaxLen`, `Email`, `OneOf`, `Matches`,
+  `Equal` and `Custom` saw the value as it arrived, so `MinLen(8)` passed
+  `"       x"` while `Value()` handed back `"x"`. A value padded with spaces to
+  reach a minimum length is now refused; `" m "` now passes `OneOf("m")`, and
+  `Custom` is given the trimmed value. `Validator.Value(name)` still returns the
+  value as it arrived.
 
 ### Changed in v0.3.0
 
