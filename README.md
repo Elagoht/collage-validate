@@ -286,6 +286,9 @@ validate.New(validate.Options{
   reach a minimum length is now refused; `" m "` now passes `OneOf("m")`, and
   `Custom` is given the trimmed value. `Validator.Value(name)` still returns the
   value as it arrived.
+- A value of only white space now counts as empty for every check, as it
+  already did for `Required`: an optional field sent as `"   "` is skipped by
+  `MinLen`, `Email`, `OneOf` and the rest, where `Email()` used to refuse it.
 
 ### Changed in v0.3.0
 
